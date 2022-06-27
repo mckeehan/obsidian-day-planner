@@ -2,7 +2,7 @@
     import { onMount } from 'svelte';
     import { onDestroy } from "svelte";
     import { planSummary, now, nowPosition, zoomLevel } from './timeline-store';
-    import type { PlanItem, PlanSummaryData } from './plan-data';
+    import { PlanItem, PlanSummaryData } from './plan-data';
     const moment = (window as any).moment;
 
     export let summary: PlanSummaryData;
@@ -12,9 +12,32 @@
     let timelineMeterPosition: number;
     let currentTime: Date;
     let autoScroll: boolean = true;
+    let timelineitems;
 
     const unsubSummary = planSummary.subscribe(val => {
         summary = val;
+        timelineitems = summary.items.flatMap(i => {
+          let results = [];
+          let endTime = i.endTime;
+          let rawEndTime = i.rawEndTime;
+          i.endTime = undefined;
+          i.rawEndTime = "";
+          results.push(i);
+          if( endTime ) {
+            results.push(
+              new PlanItem(i.matchIndex, i.charIndex, i.isCompleted, true, false, endTime, undefined, rawEndTime, "", "OPEN", i.raw)
+            );
+          }
+          return results;
+        })
+        .reduce((reduced, item, i) => {
+          let old = reduced.at(-1);
+          if( old && old.isBreak && old.rawStartTime == item.rawStartTime ) {
+            return [...reduced.slice(0,-1), item];
+          } else {
+            return [...reduced, item];
+          }
+        }, []);
         updateTimelineMeterPosition();
     });
 
@@ -65,7 +88,7 @@
     }
 
     function updateTimelineMeterPosition() {
-      timelineMeterPosition = summary.empty ? 0 : ((summary.items.first().time.getMinutes()*timelineZoomLevel)*-1) - 1;
+      timelineMeterPosition = summary.empty ? 0 : ((summary.items.first().startTime.getMinutes()*timelineZoomLevel)*-1) - 1;
     }
 
     function shortClass(item: PlanItem) {
@@ -74,6 +97,36 @@
 
     function pastClass(item: PlanItem) {
       return item.isPast ? 'past' : '';
+    }
+
+    function getClassesForEmptySlot(startDate: Date, endDate: Date) {
+      let classes: string;
+      let durationInMinutes = getTimeDifference(startDate, endDate)
+      const now = new Date();
+
+      if (durationInMinutes < (75/timelineZoomLevel)) {
+        classes += 'short'
+      }
+
+      if (now.getMilliseconds() >= endDate.getMilliseconds()) {
+        classes += ' past'
+      }
+
+      return classes
+    }
+
+    function getTimeDifference(startDate: Date, endDate: Date) {
+      let timeDiff = endDate.getMilliseconds() - startDate.getMilliseconds();
+      
+      return Math.round(((timeDiff % 86400000) % 3600000) / 60000);
+    }
+
+    function breakClass(item: PlanItem) {
+      return item.text === 'BREAK' ? 'break' : '';
+    }
+
+    function endClass(item: PlanItem) {
+      return item.text === 'END' ? 'end' : '';
     }
 
 </script>
@@ -154,7 +207,7 @@
   padding-bottom: 50px;
 }
 
-.event_item{
+.event_item, .empty_event{
     border-bottom: 2px solid var(--background-primary);
     margin: 0;
     cursor: pointer;
@@ -349,6 +402,10 @@ color:#fff;
   margin-top: 50%;
 }
 
+.break {
+  background: none;
+}
+
 </style>
 
 {#if summary.items.length > 0}
@@ -360,14 +417,20 @@ color:#fff;
       </div>
         
       <div class="events">
-        {#each summary.items as item, i}
-            <div class="event_item event_item_color{i%10+1} {shortClass(item)} {pastClass(item)}" style="height: {item.durationMins*timelineZoomLevel}px;" data-title="{item.rawTime}">
+        {#each timelineitems as item, i}
+            <div class="event_item event_item_color{i%10+1} {shortClass(item)} {pastClass(item)} {breakClass(item)} {endClass(item)}" style="height: {item.durationMins*timelineZoomLevel}px;" data-title="{item.rawStartTime}">
               <div class="event_item_contents">
                 <div class="ei_Dot {item === summary.current ? 'dot_active' : ''}"></div>
-                <div class="ei_Title">{item.rawTime}</div>
+                <div class="ei_Title">{item.rawStartTime}</div>
                 <div class="ei_Copy">{item.text ?? ''}</div>
               </div>
             </div>
+
+            {#if item.rawEndTime !== '' && i+1 < summary.items.length}
+            <div class="empty_event {getClassesForEmptySlot(item.endTime, summary.items[i+1].startTime)}" style="height: {getTimeDifference(item.endTime, summary.items[i+1].startTime)*timelineZoomLevel}px;" data-title="empty">
+            </div>
+            {/if}
+            
         {/each}
       </div>
 

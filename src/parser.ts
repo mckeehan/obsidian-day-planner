@@ -22,10 +22,12 @@ export default class Parser {
         try {
             const matches: {index: number, value: RegExpExecArray}[] = [];
             let match;
-            input.forEach((line, i) => {
+            input.every((line, i) => {
+                if( line.match("^---$") ) return false;
                 while(match = this.PLAN_PARSER_REGEX.exec(line)){
                     matches.push({index:i, value: match});
                 }
+                return true;
             });
             return matches;
         } catch (error) {
@@ -40,18 +42,33 @@ export default class Parser {
                 const isCompleted = this.matchValue(value.groups.completion, 'x');
                 const isBreak = value.groups.break !== undefined;
                 const isEnd = value.groups.end !== undefined;
-                const time = new Date();
-                time.setHours(parseInt(value.groups.hours))
-                time.setMinutes(parseInt(value.groups.minutes))
-                time.setSeconds(0);
+                const startTime = new Date();
+                startTime.setHours(parseInt(value.groups.hours))
+                startTime.setMinutes(parseInt(value.groups.minutes))
+                startTime.setSeconds(0);
+
+                let endTimeRaw = ''
+                let endTime = new Date();
+                if (value.groups.endHours !== undefined && value.groups.endMinutes !== undefined) {
+                    endTime.setHours(parseInt(value.groups.endHours))
+                    endTime.setMinutes(parseInt(value.groups.endMinutes))
+                    endTime.setSeconds(0);
+
+                    endTimeRaw = `${value.groups.endHours.padStart(2, '0')}:${value.groups.endMinutes}`
+                } else {
+                    endTime = undefined;
+                }                
+                
                 return this.planItemFactory.getPlanItem(
-                    match.index, 
+                    match.index,
                     value.index, 
                     isCompleted, 
                     isBreak,
                     isEnd,
-                    time, 
+                    startTime, 
+                    endTime,
                     `${value.groups.hours.padStart(2, '0')}:${value.groups.minutes}`,
+                    endTimeRaw,
                     value.groups.text?.trim(),
                     value[0]
                 );
